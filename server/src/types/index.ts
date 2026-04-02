@@ -56,6 +56,72 @@ export interface CreateDubbingJobRequest {
   targetLanguage: string;
 }
 
+/** Platforms that consume Quanttube deep links. */
+export enum DeepLinkPlatform {
+  IOS = "ios",
+  Android = "android",
+  Web = "web",
+}
+
+/** Avatar pressure state shown in Quantsink dashboard. */
+export enum AvatarPressureState {
+  Active = "active",
+  Pending = "pending",
+  Gray = "gray",
+}
+
+/** Per-member share engagement record. */
+export interface GroupMemberShareState {
+  memberId: string;
+  clickedAt: string | null;
+  clickedPlatform: DeepLinkPlatform | null;
+}
+
+/** Social-pressure payload attached to reel shares. */
+export interface FomoPayload {
+  label: "FOMO_PAYLOAD";
+  pressureWindowSeconds: number;
+  triggerAt: string;
+  expiresAt: string;
+  message: string;
+}
+
+/** Quanttube reel share record scoped to a Quantchat group. */
+export interface ReelShare {
+  shareId: string;
+  reelId: string;
+  groupId: string;
+  sharedBy: string;
+  memberStates: GroupMemberShareState[];
+  deepLinks: Record<DeepLinkPlatform, string>;
+  fomoPayload: FomoPayload;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Request payload to share a reel into Quantchat. */
+export interface CreateReelShareRequest {
+  reelId: string;
+  groupId: string;
+  sharedBy: string;
+  memberIds: string[];
+}
+
+/** Request payload to track deep-link click events. */
+export interface RegisterDeepLinkClickRequest {
+  memberId: string;
+  platform: DeepLinkPlatform;
+}
+
+/** Dashboard state per avatar in Quantsink. */
+export interface AvatarDashboardState {
+  memberId: string;
+  avatarState: AvatarPressureState;
+  lastClickAt: string | null;
+  pendingShareCount: number;
+  grayShareCount: number;
+}
+
 /**
  * The 150 languages supported for Generative Deep-Dubbing.
  * This list covers the top spoken languages worldwide.

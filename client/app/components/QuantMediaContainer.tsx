@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PlaybackMode, useMedia } from "../context/MediaContext";
 import styles from "./QuantMediaContainer.module.css";
@@ -17,6 +17,78 @@ import styles from "./QuantMediaContainer.module.css";
  */
 export default function QuantMediaContainer() {
   const { state, setMode } = useMedia();
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const [shareData, setShareData] = useState<ReelShareResponse | null>(null);
+  const [dashboard, setDashboard] = useState<AvatarDashboardState[]>([]);
+
+  const groupId = "group-alpha";
+  const sharedBy = "member-owner";
+  const memberIds = ["member-a", "member-b", "member-c"];
+
+  const spectrumConfig = useMemo(
+    () =>
+      Array.from({ length: 24 }, (_, i) => {
+        const base = 28 + (i % 6) * 8;
+        const peak = Math.min(92, base + 24 + (i % 4) * 4);
+        const duration = 0.45 + (i % 5) * 0.08;
+        return { base, peak, duration };
+      }),
+    []
+  );
+
+  async function refreshDashboard() {
+    try {
+      const response = await fetch(`http://localhost:4000/api/reels/quantsink/${groupId}/avatars`);
+      if (!response.ok) return;
+      const payload = (await response.json()) as AvatarDashboardState[];
+      setDashboard(payload);
+    } catch {
+      // noop for local dev without backend
+    }
+  }
+
+  async function shareReelToQuantchat() {
+    setShareLoading(true);
+    setShareError(null);
+    try {
+      const response = await fetch("http://localhost:4000/api/reels/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reelId: "reel-hyper-001",
+          groupId,
+          sharedBy,
+          memberIds,
+        }),
+      });
+      const payload = (await response.json()) as ReelShareResponse | { error: string };
+      if (!response.ok) {
+        setShareError("error" in payload ? payload.error : "Failed to share reel");
+        return;
+      }
+      setShareData(payload as ReelShareResponse);
+      await refreshDashboard();
+    } catch {
+      setShareError("Backend unavailable at http://localhost:4000");
+    } finally {
+      setShareLoading(false);
+    }
+  }
+
+  async function simulateMemberClick(memberId: string, platform: "ios" | "android" | "web") {
+    if (!shareData) return;
+    try {
+      await fetch(`http://localhost:4000/api/reels/share/${shareData.shareId}/click`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memberId, platform }),
+      });
+      await refreshDashboard();
+    } catch {
+      // noop for local dev without backend
+    }
+  }
 
   return (
     <div className={styles.wrapper}>
@@ -47,8 +119,20 @@ export default function QuantMediaContainer() {
           aria-label={`${modeLabel(state.mode)} player`}
         >
           {state.mode === PlaybackMode.Cinema && <CinemaView />}
-          {state.mode === PlaybackMode.ShortReel && <ShortReelView />}
-          {state.mode === PlaybackMode.AudioOnly && <AudioOnlyView />}
+          {state.mode === PlaybackMode.ShortReel && (
+            <ShortReelView
+              shareLoading={shareLoading}
+              shareError={shareError}
+              shareData={shareData}
+              dashboard={dashboard}
+              onShare={shareReelToQuantchat}
+              onRefreshDashboard={refreshDashboard}
+              onSimulateClick={simulateMemberClick}
+            />
+          )}
+          {state.mode === PlaybackMode.AudioOnly && (
+            <AudioOnlyView spectrumConfig={spectrumConfig} />
+          )}
         </motion.div>
       </AnimatePresence>
     </div>
@@ -72,7 +156,25 @@ function CinemaView() {
   );
 }
 
-function ShortReelView() {
+interface ShortReelViewProps {
+  shareLoading: boolean;
+  shareError: string | null;
+  shareData: ReelShareResponse | null;
+  dashboard: AvatarDashboardState[];
+  onShare: () => Promise<void>;
+  onRefreshDashboard: () => Promise<void>;
+  onSimulateClick: (memberId: string, platform: "ios" | "android" | "web") => Promise<void>;
+}
+
+function ShortReelView({
+  shareLoading,
+  shareError,
+  shareData,
+  dashboard,
+  onShare,
+  onRefreshDashboard,
+  onSimulateClick,
+}: ShortReelViewProps) {
   return (
     <div className={styles.reelInner}>
       <div className={styles.videoPlaceholder}>
@@ -81,25 +183,88 @@ function ShortReelView() {
       <aside className={styles.reelActions}>
         <button aria-label="Like">♥</button>
         <button aria-label="Comment">💬</button>
-        <button aria-label="Share">↗</button>
+        <button aria-label="Share to Quantchat" onClick={() => void onShare()}>
+          ↗
+        </button>
       </aside>
+      <section className={styles.reelPanel} aria-label="Quantchat reel share panel">
+        <p className={styles.panelTitle}>Quantchat Group Share + FOMO Payload</p>
+        <div className={styles.panelActions}>
+          <button onClick={() => void onShare()} disabled={shareLoading}>
+            {shareLoading ? "Sharing..." : "Share Reel"}
+          </button>
+          <button onClick={() => void onRefreshDashboard()}>Refresh Quantsink</button>
+        </div>
+        {shareError && <p className={styles.errorText}>{shareError}</p>}
+        {shareData && (
+          <div className={styles.payloadBlock}>
+            <p>
+              <strong>Share ID:</strong> {shareData.shareId}
+            </p>
+            <p>
+              <strong>Payload:</strong> {shareData.fomoPayload.label} (
+              {shareData.fomoPayload.pressureWindowSeconds}s)
+            </p>
+            <p>
+              <strong>Deep Links:</strong> iOS / Android / Web
+            </p>
+            <ul>
+              <li>{shareData.deepLinks.ios}</li>
+              <li>{shareData.deepLinks.android}</li>
+              <li>{shareData.deepLinks.web}</li>
+            </ul>
+            <div className={styles.panelActions}>
+              {shareData.memberStates.map((member) => (
+                <button
+                  key={member.memberId}
+                  onClick={() => void onSimulateClick(member.memberId, "android")}
+                >
+                  Click as {member.memberId}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {dashboard.length > 0 && (
+          <div className={styles.avatarGrid}>
+            {dashboard.map((avatar) => (
+              <div key={avatar.memberId} className={styles.avatarCard}>
+                <span
+                  className={`${styles.avatarDot} ${
+                    avatar.avatarState === "gray"
+                      ? styles.avatarGray
+                      : avatar.avatarState === "pending"
+                        ? styles.avatarPending
+                        : styles.avatarActive
+                  }`}
+                  aria-hidden="true"
+                />
+                <div>
+                  <strong>{avatar.memberId}</strong>
+                  <p>{avatar.avatarState}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
 
-function AudioOnlyView() {
+function AudioOnlyView({ spectrumConfig }: { spectrumConfig: SpectrumBarConfig[] }) {
   return (
     <div className={styles.audioInner}>
       <div className={styles.spectrumBar} aria-hidden="true">
-        {Array.from({ length: 24 }).map((_, i) => (
+        {spectrumConfig.map((bar, i) => (
           <motion.div
             key={i}
             className={styles.bar}
-            animate={{ height: `${20 + Math.random() * 60}%` }}
+            animate={{ height: [`${bar.base}%`, `${bar.peak}%`] }}
             transition={{
               repeat: Infinity,
               repeatType: "reverse",
-              duration: 0.4 + Math.random() * 0.4,
+              duration: bar.duration,
             }}
           />
         ))}
@@ -122,4 +287,31 @@ function modeLabel(mode: PlaybackMode): string {
     case PlaybackMode.AudioOnly:
       return "Audio Only";
   }
+}
+
+interface FomoPayload {
+  label: "FOMO_PAYLOAD";
+  pressureWindowSeconds: number;
+}
+
+interface ReelShareResponse {
+  shareId: string;
+  deepLinks: {
+    ios: string;
+    android: string;
+    web: string;
+  };
+  memberStates: Array<{ memberId: string }>;
+  fomoPayload: FomoPayload;
+}
+
+interface AvatarDashboardState {
+  memberId: string;
+  avatarState: "active" | "pending" | "gray";
+}
+
+interface SpectrumBarConfig {
+  base: number;
+  peak: number;
+  duration: number;
 }

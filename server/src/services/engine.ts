@@ -5,6 +5,14 @@ import {
   DubbingJob,
   DubbingJobStatus,
   SUPPORTED_LANGUAGES,
+  ReelShare,
+  CreateReelShareRequest,
+  DeepLinkPlatform,
+  RegisterDeepLinkClickRequest,
+  AvatarDashboardState,
+  AvatarPressureState,
+  GroupMemberShareState,
+  FomoPayload,
 } from "../types";
 
 /**
@@ -17,6 +25,11 @@ const sessions = new Map<string, MediaSession>();
  * In-memory store for dubbing jobs.
  */
 const dubbingJobs = new Map<string, DubbingJob>();
+
+/**
+ * In-memory store for Quantchat reel shares with FOMO payload.
+ */
+const reelShares = new Map<string, ReelShare>();
 
 // ---------------------------------------------------------------------------
 // Session management
@@ -158,10 +171,175 @@ export function listDubbingJobs(sessionId?: string): DubbingJob[] {
 }
 
 // ---------------------------------------------------------------------------
+// Quantchat Reels sharing + deep links + Quantsink social pressure
+// ---------------------------------------------------------------------------
+
+const FOMO_WINDOW_MS = 5 * 60 * 1000;
+
+function toIso(ms: number): string {
+  return new Date(ms).toISOString();
+}
+
+function computeAvatarState(share: ReelShare, member: GroupMemberShareState): AvatarPressureState {
+  if (member.clickedAt) return AvatarPressureState.Active;
+  const triggerMs = Date.parse(share.fomoPayload.triggerAt);
+  if (Date.now() >= triggerMs) return AvatarPressureState.Gray;
+  return AvatarPressureState.Pending;
+}
+
+function buildDeepLinks(shareId: string): Record<DeepLinkPlatform, string> {
+  const encodedShareId = encodeURIComponent(shareId);
+  return {
+    [DeepLinkPlatform.IOS]: `quanttube://reels/share/${encodedShareId}?platform=ios`,
+    [DeepLinkPlatform.Android]: `quanttube://reels/share/${encodedShareId}?platform=android`,
+    [DeepLinkPlatform.Web]: `https://quanttube.app/reels/share/${encodedShareId}?platform=web`,
+  };
+}
+
+/** Create a Quantchat reel share wrapped in a FOMO payload. */
+export function createReelShare(payload: CreateReelShareRequest): ReelShare | { error: string } {
+  const { reelId, groupId, sharedBy, memberIds } = payload;
+  if (!reelId || !groupId || !sharedBy) {
+    return { error: "reelId, groupId and sharedBy are required" };
+  }
+  if (!Array.isArray(memberIds) || memberIds.length === 0) {
+    return { error: "memberIds must contain at least one member" };
+  }
+
+  const uniqueMembers = Array.from(
+    new Set(
+      memberIds
+        .filter((m): m is string => typeof m === "string")
+        .map((m) => m.trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (uniqueMembers.length === 0) {
+    return { error: "memberIds must contain at least one non-empty member id" };
+  }
+
+  const nowMs = Date.now();
+  const shareId = uuidv4();
+  const triggerAt = nowMs + FOMO_WINDOW_MS;
+  const fomoPayload: FomoPayload = {
+    label: "FOMO_PAYLOAD",
+    pressureWindowSeconds: 300,
+    triggerAt: toIso(triggerAt),
+    expiresAt: toIso(triggerAt),
+    message: "Open this reel in 5 minutes or your Quantsink avatar turns gray temporarily.",
+  };
+
+  const share: ReelShare = {
+    shareId,
+    reelId,
+    groupId,
+    sharedBy,
+    memberStates: uniqueMembers.map((memberId) => ({
+      memberId,
+      clickedAt: null,
+      clickedPlatform: null,
+    })),
+    deepLinks: buildDeepLinks(shareId),
+    fomoPayload,
+    createdAt: toIso(nowMs),
+    updatedAt: toIso(nowMs),
+  };
+
+  reelShares.set(shareId, share);
+  return share;
+}
+
+/** Get a reel share by ID. */
+export function getReelShare(shareId: string): ReelShare | undefined {
+  return reelShares.get(shareId);
+}
+
+/** List reel shares, optionally filtered by group ID. */
+export function listReelShares(groupId?: string): ReelShare[] {
+  const all = Array.from(reelShares.values());
+  if (groupId) return all.filter((s) => s.groupId === groupId);
+  return all;
+}
+
+/** Register a deep-link click for a member and platform. */
+export function registerReelShareClick(
+  shareId: string,
+  payload: RegisterDeepLinkClickRequest
+): ReelShare | { error: string } {
+  const share = reelShares.get(shareId);
+  if (!share) return { error: "Reel share not found" };
+
+  const { memberId, platform } = payload;
+  if (!memberId || !platform) {
+    return { error: "memberId and platform are required" };
+  }
+  if (!Object.values(DeepLinkPlatform).includes(platform)) {
+    return { error: `platform must be one of: ${Object.values(DeepLinkPlatform).join(", ")}` };
+  }
+
+  const member = share.memberStates.find((m) => m.memberId === memberId);
+  if (!member) return { error: `Member ${memberId} is not part of this share` };
+
+  const now = new Date().toISOString();
+  member.clickedAt = now;
+  member.clickedPlatform = platform;
+  share.updatedAt = now;
+  return share;
+}
+
+/** Get Quantsink avatar states for a group across all active shares. */
+export function getAvatarDashboardStates(groupId: string): AvatarDashboardState[] {
+  const shares = listReelShares(groupId);
+  if (shares.length === 0) return [];
+
+  const memberAccumulator = new Map<
+    string,
+    { lastClickAt: string | null; pendingShareCount: number; grayShareCount: number }
+  >();
+
+  for (const share of shares) {
+    for (const member of share.memberStates) {
+      const avatarState = computeAvatarState(share, member);
+      const current = memberAccumulator.get(member.memberId) ?? {
+        lastClickAt: null,
+        pendingShareCount: 0,
+        grayShareCount: 0,
+      };
+
+      if (avatarState === AvatarPressureState.Pending) current.pendingShareCount += 1;
+      if (avatarState === AvatarPressureState.Gray) current.grayShareCount += 1;
+      if (member.clickedAt && (!current.lastClickAt || member.clickedAt > current.lastClickAt)) {
+        current.lastClickAt = member.clickedAt;
+      }
+
+      memberAccumulator.set(member.memberId, current);
+    }
+  }
+
+  return Array.from(memberAccumulator.entries()).map(([memberId, acc]) => {
+    const avatarState =
+      acc.grayShareCount > 0
+        ? AvatarPressureState.Gray
+        : acc.pendingShareCount > 0
+          ? AvatarPressureState.Pending
+          : AvatarPressureState.Active;
+    return {
+      memberId,
+      avatarState,
+      lastClickAt: acc.lastClickAt,
+      pendingShareCount: acc.pendingShareCount,
+      grayShareCount: acc.grayShareCount,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Helpers for tests – reset stores
 // ---------------------------------------------------------------------------
 
 export function _resetStores(): void {
   sessions.clear();
   dubbingJobs.clear();
+  reelShares.clear();
 }
