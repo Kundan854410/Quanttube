@@ -174,7 +174,7 @@ export function listDubbingJobs(sessionId?: string): DubbingJob[] {
 // Quantchat Reels sharing + deep links + Quantsink social pressure
 // ---------------------------------------------------------------------------
 
-const FOMO_WINDOW_MS = 5 * 60 * 1000;
+const GRAY_AVATAR_DURATION_MS = 5 * 60 * 1000;
 const DEFAULT_FOMO_WINDOW_SECONDS = 300;
 
 function toIso(ms: number): string {
@@ -231,16 +231,17 @@ export function createReelShare(payload: CreateReelShareRequest): ReelShare | { 
     return { error: "pressureWindowSeconds must be a positive number when provided" };
   }
 
-  const fomoWindowMs = Math.floor(requestedWindowSeconds * 1000);
+  const normalizedWindowSeconds = Math.floor(requestedWindowSeconds);
+  const fomoWindowMs = normalizedWindowSeconds * 1000;
   const nowMs = Date.now();
   const shareId = uuidv4();
   const triggerAt = nowMs + fomoWindowMs;
   const fomoPayload: FomoPayload = {
     label: "FOMO_PAYLOAD",
-    pressureWindowSeconds: Math.floor(requestedWindowSeconds),
+    pressureWindowSeconds: normalizedWindowSeconds,
     triggerAt: toIso(triggerAt),
-    expiresAt: toIso(triggerAt + FOMO_WINDOW_MS),
-    message: `Open this reel in ${formatPressureWindow(Math.floor(requestedWindowSeconds))} or your Quantsink avatar turns gray temporarily.`,
+    expiresAt: toIso(triggerAt + GRAY_AVATAR_DURATION_MS),
+    message: `Open this reel in ${formatPressureWindow(normalizedWindowSeconds)} or your Quantsink avatar turns gray temporarily.`,
   };
 
   const share: ReelShare = {

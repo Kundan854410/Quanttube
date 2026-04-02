@@ -5,6 +5,18 @@ import { motion, AnimatePresence } from "framer-motion";
 import { PlaybackMode, useMedia } from "../context/MediaContext";
 import styles from "./QuantMediaContainer.module.css";
 
+const QUANTTUBE_CONFIG = {
+  apiBaseUrl: process.env.NEXT_PUBLIC_QUANTTUBE_API_BASE_URL ?? "http://localhost:4000",
+  groupId: process.env.NEXT_PUBLIC_QUANTCHAT_GROUP_ID ?? "group-alpha",
+  sharedBy: process.env.NEXT_PUBLIC_QUANTCHAT_MEMBER_ID ?? "member-owner",
+  memberIds: (process.env.NEXT_PUBLIC_QUANTCHAT_MEMBER_IDS ?? "member-a,member-b,member-c")
+    .split(",")
+    .map((member) => member.trim())
+    .filter(Boolean),
+} as const;
+
+type DeepLinkPlatform = "ios" | "android" | "web";
+
 /**
  * QuantMediaContainer – the Shape-Shifting Player UI.
  *
@@ -22,17 +34,7 @@ export default function QuantMediaContainer() {
   const [shareData, setShareData] = useState<ReelShareResponse | null>(null);
   const [dashboard, setDashboard] = useState<AvatarDashboardState[]>([]);
 
-  const apiBaseUrl = process.env.NEXT_PUBLIC_QUANTTUBE_API_BASE_URL ?? "http://localhost:4000";
-  const groupId = process.env.NEXT_PUBLIC_QUANTCHAT_GROUP_ID ?? "group-alpha";
-  const sharedBy = process.env.NEXT_PUBLIC_QUANTCHAT_MEMBER_ID ?? "member-owner";
-  const memberIds = useMemo(
-    () =>
-      (process.env.NEXT_PUBLIC_QUANTCHAT_MEMBER_IDS ?? "member-a,member-b,member-c")
-        .split(",")
-        .map((member) => member.trim())
-        .filter(Boolean),
-    []
-  );
+  const { apiBaseUrl, groupId, sharedBy, memberIds } = QUANTTUBE_CONFIG;
 
   const spectrumConfig = useMemo(
     () =>
@@ -84,7 +86,7 @@ export default function QuantMediaContainer() {
     }
   }
 
-  async function simulateMemberClick(memberId: string, platform: "ios" | "android" | "web") {
+  async function simulateMemberClick(memberId: string, platform: DeepLinkPlatform) {
     if (!shareData) return;
     try {
       await fetch(`${apiBaseUrl}/api/reels/share/${shareData.shareId}/click`, {
@@ -171,7 +173,7 @@ interface ShortReelViewProps {
   dashboard: AvatarDashboardState[];
   onShare: () => Promise<void>;
   onRefreshDashboard: () => Promise<void>;
-  onSimulateClick: (memberId: string, platform: "ios" | "android" | "web") => Promise<void>;
+  onSimulateClick: (memberId: string, platform: DeepLinkPlatform) => Promise<void>;
 }
 
 function ShortReelView({
