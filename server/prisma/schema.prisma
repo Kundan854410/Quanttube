@@ -1,0 +1,117 @@
+// This is the Quanttube Prisma schema.
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Creators – content producers (linked to Quantmail SSO user ID)
+// ---------------------------------------------------------------------------
+model Creator {
+  id           String   @id @default(uuid())
+  quantmailId  String   @unique              // Quantmail biometric SSO user ID
+  displayName  String
+  bio          String?
+  avatarUrl    String?
+  subscriberCount Int   @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  videos       Video[]
+  audioTracks  AudioTrack[]
+
+  @@map("creators")
+}
+
+// ---------------------------------------------------------------------------
+// Videos – long-form or short-reel video content
+// ---------------------------------------------------------------------------
+model Video {
+  id           String      @id @default(uuid())
+  creatorId    String
+  creator      Creator     @relation(fields: [creatorId], references: [id])
+  title        String
+  description  String?
+  hlsUrl       String                        // HLS master playlist URL
+  thumbnailUrl String?
+  durationSecs Int
+  viewCount    Int         @default(0)
+  isPublished  Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  audioTrack    AudioTrack?
+  watchHistory  WatchHistory[]
+
+  @@map("videos")
+}
+
+// ---------------------------------------------------------------------------
+// AudioTracks – standalone audio content (podcasts / music) or video's
+//               extracted audio track for Drive / Background mode
+// ---------------------------------------------------------------------------
+model AudioTrack {
+  id           String   @id @default(uuid())
+  creatorId    String
+  creator      Creator  @relation(fields: [creatorId], references: [id])
+  videoId      String?  @unique              // null for standalone audio
+  video        Video?   @relation(fields: [videoId], references: [id])
+  title        String
+  format       String   @default("opus")    // e.g. opus, aac, mp3
+  sampleRate   Int      @default(48000)
+  channels     Int      @default(2)
+  durationSecs Int
+  streamUrl    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("audio_tracks")
+}
+
+// ---------------------------------------------------------------------------
+// WatchHistory – per-user view sessions (userId = Quantmail SSO user ID)
+// ---------------------------------------------------------------------------
+model WatchHistory {
+  id             String   @id @default(uuid())
+  userId         String                        // Quantmail SSO user ID
+  videoId        String
+  video          Video    @relation(fields: [videoId], references: [id])
+  watchedSeconds Int      @default(0)
+  completed      Boolean  @default(false)
+  playbackMode   String   @default("cinema")  // cinema | short-reel | audio-only
+  engagementScore Float   @default(0)         // 0-1 computed by Telepathic Feed
+  watchedAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  microInteractions MicroInteraction[]
+
+  @@index([userId])
+  @@index([videoId])
+  @@map("watch_history")
+}
+
+// ---------------------------------------------------------------------------
+// MicroInteractions – granular engagement signals used by the Telepathic Feed
+// ---------------------------------------------------------------------------
+model MicroInteraction {
+  id             String   @id @default(uuid())
+  watchHistoryId String
+  watchHistory   WatchHistory @relation(fields: [watchHistoryId], references: [id])
+  userId         String                        // denormalized for fast queries
+  eventType      String                        // pause | resume | scroll | seek | skip
+  scrollSpeed    Float?                        // px/s (null for non-scroll events)
+  pausedAtSecs   Int?                          // playback position at pause
+  seekFromSecs   Int?
+  seekToSecs     Int?
+  metadata       Json?                         // arbitrary additional signal data
+  occurredAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([watchHistoryId])
+  @@map("micro_interactions")
+}
