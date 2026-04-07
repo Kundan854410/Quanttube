@@ -22,6 +22,7 @@ interface SmartTranscriptProps {
 }
 
 export default function SmartTranscript({ videoId: _videoId }: SmartTranscriptProps) {
+  void _videoId;
   const [isGenerating, setIsGenerating] = useState(true);
   const [visibleChapters, setVisibleChapters] = useState<Chapter[]>([]);
   const [saved, setSaved] = useState(false);
