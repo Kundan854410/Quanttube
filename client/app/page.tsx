@@ -83,24 +83,29 @@ export default function Home() {
             transition={{ delay: 0.4 }}
           >
             <div className="absolute inset-0 bg-gradient-to-r from-purple-600/30 to-cyan-600/30 rounded-2xl blur-xl" />
-            <div className="relative flex gap-3 p-3 rounded-2xl border border-white/20 bg-white/5 backdrop-blur-md shadow-2xl">
+            <form
+              className="relative flex gap-3 p-3 rounded-2xl border border-white/20 bg-white/5 backdrop-blur-md shadow-2xl"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleGenerate();
+              }}
+            >
               <span className="text-2xl self-center pl-2">✨</span>
               <input
                 type="text"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && void handleGenerate()}
                 placeholder="What do you want to watch today?"
                 className="flex-1 bg-transparent text-white placeholder-white/40 text-lg outline-none py-2"
               />
               <button
-                onClick={() => void handleGenerate()}
+                type="submit"
                 disabled={genState === "generating" || !prompt.trim()}
                 className="px-6 py-3 rounded-xl font-semibold text-sm bg-gradient-to-r from-purple-600 to-cyan-600 hover:opacity-90 disabled:opacity-50 transition whitespace-nowrap"
               >
                 Generate ▶
               </button>
-            </div>
+            </form>
           </motion.div>
 
           {/* Generation State */}

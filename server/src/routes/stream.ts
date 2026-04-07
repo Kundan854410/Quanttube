@@ -35,6 +35,7 @@ const BITRATE_LADDER = [
   { resolution: "240p",  bitrate: 250,   codec: "h264" },
   { resolution: "audio", bitrate: 128,   codec: "aac"  },
 ] as const;
+const AUDIO_ONLY_TIER = BITRATE_LADDER[BITRATE_LADDER.length - 1];
 
 /**
  * Select a bitrate tier based on engagement score.
@@ -46,7 +47,7 @@ function selectBitrateTier(
   mode?: string
 ): (typeof BITRATE_LADDER)[number] {
   if (mode === "audio-only") {
-    return BITRATE_LADDER.find((t) => t.resolution === "audio")!;
+    return BITRATE_LADDER.find((t) => t.resolution === "audio") ?? AUDIO_ONLY_TIER;
   }
   if (engagementScore >= 0.8) return BITRATE_LADDER[0]; // 4K
   if (engagementScore >= 0.6) return BITRATE_LADDER[1]; // 1080p

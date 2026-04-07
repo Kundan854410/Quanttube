@@ -54,6 +54,7 @@ export interface MediaRecommendation {
 
 const signalStore = new Map<string, CrossAppSignal[]>();
 const recommendationCache = new Map<string, MediaRecommendation>();
+const MAX_SIGNALS_FOR_RECOMMENDATION = 20;
 
 // ---------------------------------------------------------------------------
 // Signal ingestion
@@ -106,7 +107,7 @@ function computeRecommendation(
   let preferredMode: MediaRecommendation["preferredMode"] = "cinema";
   const reasons: string[] = [];
 
-  for (const signal of signals.slice(-20)) { // Only consider the last 20 signals
+  for (const signal of signals.slice(-MAX_SIGNALS_FOR_RECOMMENDATION)) {
     switch (signal.signalType) {
       case "QUANTMAIL_FLIGHT_TICKET": {
         const dest = String(signal.payload.destination ?? "travel");

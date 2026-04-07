@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import logger from "../logger";
 
-const QUANTMAIL_JWT_SECRET = process.env.QUANTMAIL_JWT_SECRET ?? "";
+const QUANTMAIL_JWT_SECRET = process.env.QUANTMAIL_JWT_SECRET;
 const QUANTMAIL_ISSUER = process.env.QUANTMAIL_ISSUER ?? "quantmail";
 
 export interface QuantmailJwtPayload {

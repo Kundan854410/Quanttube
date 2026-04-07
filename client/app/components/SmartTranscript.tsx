@@ -21,8 +21,7 @@ interface SmartTranscriptProps {
   videoId: string;
 }
 
-export default function SmartTranscript({ videoId: _videoId }: SmartTranscriptProps) {
-  void _videoId;
+export default function SmartTranscript({ videoId }: SmartTranscriptProps) {
   const [isGenerating, setIsGenerating] = useState(true);
   const [visibleChapters, setVisibleChapters] = useState<Chapter[]>([]);
   const [saved, setSaved] = useState(false);
@@ -122,7 +121,7 @@ export default function SmartTranscript({ videoId: _videoId }: SmartTranscriptPr
                 />
               ))}
             </div>
-            <span className="text-xs text-white/40">Analyzing video with Quant AI...</span>
+            <span className="text-xs text-white/40">Analyzing video {videoId} with Quant AI...</span>
           </motion.div>
         )}
       </div>
